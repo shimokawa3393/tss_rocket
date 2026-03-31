@@ -9,7 +9,7 @@ t_max = 30.0              # シミュレーション時間 [s]
 mass_wet = 0.12           # 全備質量 [kg]
 mass_dry = 0.10           # 乾燥質量（燃料燃焼後）[kg]
 drag_coeff = 0.75         # 抗力係数
-cross_area = 0.0007       # 断面積 [m²]（直径30mmなら約0.0007）
+cross_area = 0.0007       # 断面積 [m²]（直径40mmなら約0.0014）
 air_density = 1.225       # 空気密度 [kg/m³]
 gravity = 9.81            # 重力加速度 [m/s²]
 
