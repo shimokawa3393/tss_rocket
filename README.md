@@ -26,7 +26,7 @@
 | Phase 4.5 | ESP32移植検証 | ✅ |
 | Phase 5 | ESP32リアルタイム制御ループ | ✅ |
 | Phase 6 | フライトコンピュータ・安全設計 | ✅ |
-| Phase 7 | LoRa + GPS テレメトリ | 🔧 |
+| Phase 7 | LoRa テレメトリ + SDログ + リアルタイムダッシュボード | ✅ |
 | Phase 8 | モデルロケット初飛行（JAR） | 🎯 |
 | Phase 9 | 自作FC搭載ロケット | 🎯 |
 
@@ -58,10 +58,14 @@ tss_rocket/
 ├── phase4/
 │   ├── sensor_reader.py     # Raspberry Pi センサー取得
 │   └── plot_sensor.py       # センサーデータ可視化（Mac）
+├── phase7/
+│   ├── receiver.py          # LoRa受信・CSV保存・JSON書き出し
+│   ├── dashboard.py         # Flaskリアルタイムダッシュボード
+│   └── plot_telemetry.py    # テレメトリ可視化（Mac）
 └── arduino/
     ├── phase5/sensor_reader/ # ESP32 センサー読み取り
     ├── phase6/state_machine/ # フライトコンピュータ
-    └── phase7/               # LoRa テレメトリ（🔧）
+    └── phase7/lora_send/     # LoRa送信・SDログ
 ```
 
 ---
@@ -71,11 +75,10 @@ tss_rocket/
 ### 共通環境
 
 ```bash
-# Python仮想環境の作成と有効化
+mkdir <yourproject>
+cd <yourproject>
 python3 -m venv venv
 source venv/bin/activate
-
-# 必要ライブラリのインストール
 pip install numpy matplotlib pandas smbus2 bmp280
 ```
 
@@ -87,8 +90,19 @@ pip install numpy matplotlib pandas smbus2 bmp280
 - ボードマネージャーで `ESP32 by Espressif Systems` を追加
 - 以下のライブラリをインストール
   - `Adafruit BMP280 Library`
-  - `Arduino LoRa`
+  - `Arduino LoRa` by Sandeep Mistry
   - `SD`
+
+### Raspberry Pi（Phase 7）
+
+```bash
+# グローバル環境にインストール（pyLoRaはラズパイ5のGPIO対応のため）
+pip install pyLoRa --break-system-packages
+
+# venv環境にインストール
+source .venv/bin/activate
+pip install flask
+```
 
 ---
 
@@ -96,44 +110,29 @@ pip install numpy matplotlib pandas smbus2 bmp280
 
 ### Phase 2：物理シミュレーション
 
-**必要なもの**
-- Mac / PC（Python環境）
-
-**手順**
-- `phase2/rocket_sim.py` を実行
-- 推力・バーンタイム・Cdを変えてA〜Cエンジンの違いを確認
-- OpenRocketの結果と比較して差異を考察
-
 ```bash
 cd phase2
 python rocket_sim.py
 ```
 
+- 推力・バーンタイム・Cdを変えてA〜Cエンジンの違いを確認
+- OpenRocketの結果と比較して差異を考察
+
 ---
 
 ### Phase 3：PID制御
-
-**必要なもの**
-- Mac / PC（Python環境）
-
-**手順**
-- `phase3/pid_control.py` を実行
-- Kp→Kd→Kiの順にチューニング
-- ノイズありで収束することを確認してから次へ
 
 ```bash
 cd phase3
 python pid_control.py
 ```
 
+- Kp→Kd→Kiの順にチューニング
+- ノイズありで収束することを確認してから次へ
+
 ---
 
 ### Phase 4：センサー検証（Raspberry Pi）
-
-**必要なもの**
-- Raspberry Pi 5
-- MPU-6050、BMP280、AHT20
-- ブレッドボード・ジャンパー線
 
 **配線**
 ```
@@ -144,27 +143,24 @@ GPIO2 (SDA) ─── SDA
 GPIO3 (SCL) ─── SCL
 ```
 
-**手順**
-- `sudo raspi-config` でI2Cを有効化
-- `i2cdetect -y 1` で 0x38（AHT20）・0x68（MPU-6050）・0x77（BMP280）を確認
-- `phase4/sensor_reader.py` を実行してCSVに記録
-
 ```bash
+# I2C有効化
+sudo raspi-config  # Interface Options → I2C → Enable
+
+# デバイス確認（0x38=AHT20 / 0x68=MPU-6050 / 0x77=BMP280）
+i2cdetect -y 1
+
 cd phase4
 python sensor_reader.py
 
 # MacにCSVをコピーして可視化
-scp pi@raspberrypi.local:~/tss_rocket_project/*.csv .
+scp <user>@<hostname>.local:~/<yourproject>/*.csv .
 python plot_sensor.py
 ```
 
 ---
 
 ### Phase 4.5：ESP32移植検証
-
-**必要なもの**
-- ESP32-WROOM-32
-- MPU-6050
 
 **配線**
 ```
@@ -175,8 +171,7 @@ GPIO32 (SDA) ─── SDA
 GPIO33 (SCL) ─── SCL
 ```
 
-**手順**
-- `arduino/phase5/sensor_verify/sensor_verify.ino` をArduino IDEで書き込み
+- `arduino/phase5/sensor_verify/sensor_verify.ino` を書き込み
 - シリアルモニタで加速度値を確認
 - ラズパイでの取得値と比較してノイズ・ドリフトを検証
 
@@ -184,29 +179,19 @@ GPIO33 (SCL) ─── SCL
 
 ### Phase 5：リアルタイム制御ループ
 
-**必要なもの**
-- ESP32 + MPU-6050（Phase 4.5と同構成）
-
-**手順**
-- `arduino/phase5/sensor_reader/sensor_reader.ino` をArduino IDEで書き込み
-- `Wire.begin(32, 33)` が明示的に記述されていることを確認（デフォルトの21/22ではない）
+- `arduino/phase5/sensor_reader/sensor_reader.ino` を書き込み
+- `Wire.begin(32, 33)` が明示的に記述されていることを確認
 - シリアルモニタでroll角と制御出力を確認
-- `delay()` ではなく `millis()` 差分で制御ループを管理していることを確認
 
-> ⚠️ Kdが大きすぎるとノイズを増幅して発散する。実機ではノイズフィルタが必要。
+> ⚠️ `delay()` ではなく `millis()` 差分で制御ループを管理すること。
 
 ---
 
 ### Phase 6：フライトコンピュータ・安全設計
 
-**必要なもの**
-- ESP32 + MPU-6050 + BMP280 + SDカードモジュール + MOSFETモジュール + LED（ニクロム線の代替）
-
-**手順**
-- `arduino/phase6/state_machine/state_machine.ino` をArduino IDEで書き込み
-- 静止状態でIDLE→手で振ってLAUNCHED→COAST→APOGEE遷移を確認
+- `arduino/phase6/state_machine/state_machine.ino` を書き込み
+- 静止→手で振る→APOGEE遷移を確認
 - APOGEE検出でLED（ニクロム線代替）が点灯することを確認
-- SDカードにフライトログが記録されることを確認
 
 **ステートマシン**
 ```
@@ -219,7 +204,61 @@ IDLE → LAUNCHED → COAST → APOGEE → DESCENT → LANDED
 - 一度でも上昇を記録
 - 頂点確認（高度が2m以上低下）
 
-> ⚠️ 地上振動での誤爆防止のため「発射確認済み」フラグは必須。ニクロム線はMOSFET経由で駆動すること。
+---
+
+### Phase 7：LoRa テレメトリ + SDログ + リアルタイムダッシュボード
+
+**配線（ESP32 → Ra-02）**
+
+| Ra-02 | ESP32 |
+|-------|-------|
+| VCC | 3V3 |
+| GND | GND |
+| SCK | GPIO18 |
+| MOSI | GPIO23 |
+| MISO | GPIO19 |
+| NSS(CS) | GPIO15 |
+| RST | GPIO14 |
+| DIO0 | GPIO26 |
+
+**配線（ラズパイ → Ra-02）**
+
+| Ra-02 | ラズパイ |
+|-------|---------|
+| VCC | Pin1（3.3V） |
+| GND | Pin6 |
+| SCK | Pin23 |
+| MOSI | Pin19 |
+| MISO | Pin21 |
+| NSS(CS) | Pin24 |
+| RST | Pin15（GPIO22） |
+| DIO0 | Pin7（GPIO4） |
+
+**起動手順**
+
+```bash
+# ターミナル1：SSHトンネル（Mac）
+ssh -L 5000:localhost:5000 <user>@<hostname>.local
+
+# ターミナル2：受信（ラズパイ・グローバルpython）
+deactivate
+python3 receiver.py
+
+# ターミナル3：ダッシュボード（ラズパイ・venv）
+source .venv/bin/activate
+python3 dashboard.py
+```
+
+ブラウザで `http://localhost:5000` を開く。
+
+**SDカードデータの可視化（Mac）**
+
+```bash
+scp <user>@<hostname>.local:~/<yourproject>/telemetry_*.csv ~/Desktop/
+python3 phase7/plot_telemetry.py
+```
+
+> ⚠️ pyLoRaはラズパイ5のGPIOに非対応のため、receiver.pyはグローバルpythonで起動すること。
 
 ---
 
@@ -235,6 +274,12 @@ IDLE → LAUNCHED → COAST → APOGEE → DESCENT → LANDED
 **Phase 6**
 - 地上振動でパラシュートが誤爆する。「発射確認済み」フラグが必須
 - ニクロム線はMOSFET経由で駆動。GPIOから直接は流せない
+
+**Phase 7**
+- pyLoRaがラズパイ5のGPIO（RPi.GPIO）に非対応。グローバル環境にrpi-lgpioを入れることで解決
+- LoRaのRSTピンはGPIO22（物理Pin15）。Pin22と混同しないこと
+- SDカードとLoRaはSPIを共有。CSピンだけ個別に割り当てる（LoRa:GPIO15、SD:GPIO5）
+- 無線ノイズによる文字化けパケットは `pd.to_numeric(errors='coerce')` でドロップ
 
 ---
 

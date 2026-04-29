@@ -58,5 +58,5 @@ axes[2].plot(t_list, acc_list); axes[2].set_ylabel("Acceleration [m/s²]")
 for ax in axes:
     ax.grid(True); ax.set_xlabel("Time [s]")
 plt.tight_layout()
-plt.savefig("flight_profile.png")
+plt.savefig("../data/flight_profile.png")
 plt.show()

@@ -1,7 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-df = pd.read_csv('data/flight_log_20260410_203250.csv')
+df = pd.read_csv('../data/flight_log_20260410_203250.csv')
 
 fig, axes = plt.subplots(4, 1, figsize=(10, 12))
 
@@ -25,5 +25,5 @@ axes[3].set_xlabel('時間 [s]')
 axes[3].grid()
 
 plt.tight_layout()
-plt.savefig('sensor_plot.png')
+plt.savefig('../data/sensor_plot.png')
 plt.show()
