@@ -52,11 +52,11 @@ print(f"最大高度: {max(alt_list):.1f} m")
 print(f"最大速度: {max(vel_list):.1f} m/s")
 
 fig, axes = plt.subplots(3, 1, figsize=(8, 9))
-axes[0].plot(t_list, alt_list); axes[0].set_ylabel("Altitude [m]")
-axes[1].plot(t_list, vel_list); axes[1].set_ylabel("Velocity [m/s]")
-axes[2].plot(t_list, acc_list); axes[2].set_ylabel("Acceleration [m/s²]")
+axes[0].plot(t_list, alt_list); axes[0].set_ylabel("Altitude [m]") #高度
+axes[1].plot(t_list, vel_list); axes[1].set_ylabel("Velocity [m/s]") #速度
+axes[2].plot(t_list, acc_list); axes[2].set_ylabel("Acceleration [m/s²]") #加速度
 for ax in axes:
-    ax.grid(True); ax.set_xlabel("Time [s]")
+    ax.grid(True); ax.set_xlabel("Time [s]") #時間
 plt.tight_layout()
 plt.savefig("../data/flight_profile.png")
 plt.show()
