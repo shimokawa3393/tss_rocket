@@ -25,5 +25,5 @@ axes[3].set_xlabel('time [s]') #時間
 axes[3].grid()
 
 plt.tight_layout()
-plt.savefig('../data/sensor_plot.png')
+plt.savefig('sensor_plot.png')
 plt.show()

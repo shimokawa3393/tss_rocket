@@ -29,5 +29,5 @@ axes[2].set_xlabel('time [s]') #時間
 axes[2].grid(True)
 
 plt.tight_layout()
-plt.savefig('../data/telemetry_plot.png', dpi=150)
+plt.savefig('/telemetry_plot.png', dpi=150)
 print("保存完了: telemetry_plot.png")
