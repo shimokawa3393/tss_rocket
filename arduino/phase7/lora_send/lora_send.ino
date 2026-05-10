@@ -17,6 +17,7 @@
 Adafruit_BMP280 bmp(&Wire);
 String filename;
 File logFile;
+float alt_offset = 0;
 
 int16_t readRaw(uint8_t reg) {
   Wire.beginTransmission(MPU_ADDR);
@@ -41,6 +42,8 @@ void setup() {
   if (!bmp.begin(0x77)) {
     Serial.println("BMP280失敗");
   }
+  // 起動時の高度を基準として記録
+  alt_offset = bmp.readAltitude();
 
   // SD初期化
   SPI.begin(SCK, MISO, MOSI);
@@ -76,8 +79,8 @@ void setup() {
 void loop() {
   float ax = readRaw(0x3B) / 16384.0;
   float ay = readRaw(0x3D) / 16384.0;
-  float az = readRaw(0x3F) / 16384.0;
-  float alt = bmp.readAltitude();
+  float az = readRaw(0x3F) / 16384.0 * -1;
+  float alt = bmp.readAltitude() - alt_offset;
   float temp = bmp.readTemperature();
 
   String packet = String(millis()) + "," +
