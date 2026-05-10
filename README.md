@@ -1,14 +1,13 @@
 # TSS Rocket Project
 
-深宇宙探査を目指す長期プロジェクトの、制御技術実証フェーズ。
+ロケットに搭載することを想定したフライトコンピュータと、制御技術の実証プロジェクト。
 
 ---
 
 ## 概要
 
-モデルロケットに自作フライトコンピュータを搭載し、姿勢制御・頂点検出・パラシュート展開の再現性を実証する。
+ESP32をベースにしたフライトコンピュータを自作し、センサー統合・状態管理・テレメトリ通信の基盤を構築した。
 
-- 対象：モデルロケット（JAR第4級ライセンス準拠）
 - メイン機材：ESP32、MPU-6050、BMP280、AHT20、LoRa Ra-02
 - 開発方針：ソフトウェアで完全理解してからハードに落とす
 
@@ -27,8 +26,7 @@
 | Phase 5 | ESP32リアルタイム制御ループ | ✅ |
 | Phase 6 | フライトコンピュータ・安全設計 | ✅ |
 | Phase 7 | LoRa テレメトリ + SDログ + リアルタイムダッシュボード | ✅ |
-| Phase 8 | モデルロケット初飛行（JAR） | 🎯 |
-| Phase 9 | 自作FC搭載ロケット | 🎯 |
+| Phase 8 | JAR飛行 | 🎯 |
 
 ---
 
@@ -75,8 +73,6 @@ tss_rocket/
 ### 共通環境
 
 ```bash
-mkdir <yourproject>
-cd <yourproject>
 python3 -m venv venv
 source venv/bin/activate
 pip install numpy matplotlib pandas smbus2 bmp280
@@ -124,17 +120,18 @@ python rocket_sim.py
 
 ```bash
 cd phase3
-python pid_control.py
+python control.py
 ```
 
-- Kp→Kd→Kiの順にチューニング
-- ノイズありで収束することを確認してから次へ
+- 実機とは無関係にアルゴリズムの挙動を理解するフェーズ
+- Kp→Ki→Kdの順に試してそれぞれの役割を体感する
 
 ---
 
 ### Phase 4：センサー検証（Raspberry Pi）
 
 **配線**
+
 ```
 Raspberry Pi    センサー
 3.3V  ───────── VCC
@@ -154,7 +151,7 @@ cd phase4
 python sensor_reader.py
 
 # MacにCSVをコピーして可視化
-scp <user>@<hostname>.local:~/<yourproject>/*.csv .
+scp <user>@<hostname>.local:~/tss_rocket_project/*.csv .
 python plot_sensor.py
 ```
 
@@ -163,8 +160,9 @@ python plot_sensor.py
 ### Phase 4.5：ESP32移植検証
 
 **配線**
+
 ```
-ESP32           MPU-6050
+ESP32            MPU-6050
 3V3    ───────── VCC
 GND    ───────── GND
 GPIO32 (SDA) ─── SDA
@@ -172,6 +170,7 @@ GPIO33 (SCL) ─── SCL
 ```
 
 - `arduino/phase5/sensor_verify/sensor_verify.ino` を書き込み
+- `Wire.begin(32, 33)` が明示的に記述されていることを確認
 - シリアルモニタで加速度値を確認
 - ラズパイでの取得値と比較してノイズ・ドリフトを検証
 
@@ -194,11 +193,13 @@ GPIO33 (SCL) ─── SCL
 - APOGEE検出でLED（ニクロム線代替）が点灯することを確認
 
 **ステートマシン**
+
 ```
 IDLE → LAUNCHED → COAST → APOGEE → DESCENT → LANDED
 ```
 
 **パラシュート展開の安全条件**
+
 - 発射確認済み（IDLEからの遷移あり）
 - 発射から2秒以上経過
 - 一度でも上昇を記録
@@ -254,7 +255,7 @@ python3 dashboard.py
 **SDカードデータの可視化（Mac）**
 
 ```bash
-scp <user>@<hostname>.local:~/<yourproject>/telemetry_*.csv ~/Desktop/
+scp <user>@<hostname>.local:~/tss_rocket_project/telemetry_*.csv ~/Desktop/
 python3 phase7/plot_telemetry.py
 ```
 
@@ -262,7 +263,25 @@ python3 phase7/plot_telemetry.py
 
 ---
 
+### Phase 8：JAR飛行
+
+- JARライセンス講習受講（Bタイプ）
+- Estes製キット機体を使用
+- Aエンジン（A8-3）で飛行
+- パラシュートによる回収を確認
+
+---
+
 ## 開発ログ
+
+**Phase 2**
+- パラメータが実機と乖離していて最大高度13.6mしか出なかった
+- 質量が実機の3〜5倍重かったのが主犯 → パラメータ修正で56.1mに改善
+
+**Phase 3**
+- Kdを加えたら制御出力が暴れた → ノイズを100倍に増幅していたのが原因
+- Kiを加えたら逆にわずかにズレた
+- 結果Kpだけで収束。実機では話が変わる
 
 **Phase 4**
 - `adafruit-circuitpython-bmp280` がPython 3.13と非互換 → `bmp280` ライブラリに切り替えで解決
@@ -280,6 +299,20 @@ python3 phase7/plot_telemetry.py
 - LoRaのRSTピンはGPIO22（物理Pin15）。Pin22と混同しないこと
 - SDカードとLoRaはSPIを共有。CSピンだけ個別に割り当てる（LoRa:GPIO15、SD:GPIO5）
 - 無線ノイズによる文字化けパケットは `pd.to_numeric(errors='coerce')` でドロップ
+
+**Phase 8**
+- 受動安定のみで姿勢制御の介入余地なし
+- FCの搭載は別プロジェクトでの課題として持ち越し
+
+---
+
+## おわりに
+
+本プロジェクトでは、フライトデータ収集・可視化システムを構築した。
+
+一方、能動的な姿勢制御という観点では、モデルロケットにその余地がないことが見えてきた。
+
+本プロジェクトで構築したデータ収集・可視化の基盤は、今後の開発でも応用していく。
 
 ---
 
