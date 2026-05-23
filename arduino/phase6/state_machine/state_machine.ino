@@ -1,20 +1,14 @@
-#include <SD.h>
-#include <SPI.h>
 #include <Wire.h>
 #include <Adafruit_BMP280.h>
 
-#define SD_CS      5
-#define SD_MOSI    23
-#define SD_MISO    19
-#define SD_SCK     18
+// ピン定義
 #define SDA_PIN    32
 #define SCL_PIN    33
 #define MPU_ADDR   0x68
-#define MOSFET_PIN 4
+#define MOSFET_PIN 4  // ニクロム線駆動用MOSFETピン
 
 Adafruit_BMP280 bmp;
-float groundAltitude = 0;
-
+float groundAltitude = 0; // 地上高度の基準値
 
 /*
  * フライトステートマシン
@@ -38,15 +32,16 @@ float groundAltitude = 0;
  * 【LANDED】着地
  *   → 終了
  */
- 
+
 enum FlightState {
     IDLE, LAUNCHED, COAST, APOGEE, DESCENT, LANDED
 };
 
 FlightState state = IDLE;
-unsigned long launchTime = 0;
-float maxAltitude = 0;
+unsigned long launchTime = 0; // 発射時刻
+float maxAltitude = 0;        // 到達最大高度
 
+// ステート名を文字列で返す関数
 const char* stateName(FlightState s) {
     switch(s) {
         case IDLE:     return "IDLE";
@@ -59,6 +54,7 @@ const char* stateName(FlightState s) {
     }
 }
 
+// MPU-6050の生データを読み取る関数
 int16_t readRaw(uint8_t reg) {
     Wire.beginTransmission(MPU_ADDR);
     Wire.write(reg);
@@ -67,30 +63,35 @@ int16_t readRaw(uint8_t reg) {
     return (Wire.read() << 8) | Wire.read();
 }
 
+// フライト状態を更新する関数
 void updateState(float ax, float ay, float az, float altitude) {
-    float accel = sqrt(ax*ax + ay*ay + az*az);
-    float relAlt = altitude - groundAltitude;
+    float accel  = sqrt(ax*ax + ay*ay + az*az); // 合成加速度
+    float relAlt = altitude - groundAltitude;    // 地上からの相対高度
 
     switch(state) {
         case IDLE:
+            // 加速度3G超で発射判定
             if (accel > 3.0) {
                 state = LAUNCHED;
                 launchTime = millis();
             }
             break;
         case LAUNCHED:
+            // 発射から500ms後にCOASTへ
             if (millis() - launchTime > 500) {
                 state = COAST;
                 maxAltitude = relAlt;
             }
             break;
         case COAST:
+            // 最大高度を更新し続ける
             if (relAlt > maxAltitude) maxAltitude = relAlt;
-            // 高度が下がるか、加速度が急減したら頂点判定
-            if (relAlt < maxAltitude - 2.0 || 
+            // 高度が下がるか加速度が急減したら頂点判定
+            if (relAlt < maxAltitude - 2.0 ||
                 (accel < 0.5 && maxAltitude > 0)) state = APOGEE;
             break;
         case APOGEE:
+            // パラシュート展開（MOSFET経由でニクロム線点火）
             Serial.println("★ パラシュート展開！");
             digitalWrite(MOSFET_PIN, HIGH);
             delay(1000);
@@ -98,6 +99,7 @@ void updateState(float ax, float ay, float az, float altitude) {
             state = DESCENT;
             break;
         case DESCENT:
+            // 高度5m以下かつ加速度が1G付近で着地判定
             if (relAlt < 5.0 && accel > 0.8 && accel < 1.2) state = LANDED;
             break;
         case LANDED:
@@ -109,9 +111,11 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
 
+    // MOSFETピンをLOWに初期化（誤爆防止）
     pinMode(MOSFET_PIN, OUTPUT);
     digitalWrite(MOSFET_PIN, LOW);
 
+    // MPU-6050のスリープ解除
     Wire.begin(SDA_PIN, SCL_PIN);
     Wire.beginTransmission(MPU_ADDR);
     Wire.write(0x6B);
@@ -119,6 +123,7 @@ void setup() {
     Wire.endTransmission();
     Serial.println("MPU-6050 OK");
 
+    // BMP280初期化
     if (!bmp.begin(0x77)) {
         Serial.println("BMP280: NG");
         while (true);
@@ -130,40 +135,23 @@ void setup() {
     groundAltitude = bmp.readAltitude(1013.25);
     Serial.printf("地上高度基準: %.1fm\n", groundAltitude);
 
-    SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-    delay(500);
-    if (!SD.begin(SD_CS, SPI, 4000000)) {
-        Serial.println("SD: NG");
-        while (true);
-    }
-    Serial.println("SD OK");
-
-    File f = SD.open("/flight.csv", FILE_WRITE);
-    if (f) {
-        f.println("time,ax,ay,az,altitude,state");
-        f.close();
-    }
     Serial.println("準備完了・IDLE待機中");
 }
 
 void loop() {
-    float ax = readRaw(0x3B) / 16384.0;
-    float ay = readRaw(0x3D) / 16384.0;
-    float az = readRaw(0x3F) / 16384.0;
-    float altitude = bmp.readAltitude(1013.25);
-    float relAlt = altitude - groundAltitude;
+    // センサーデータ取得
+    float ax       = readRaw(0x3B) / 16384.0;      // X軸加速度 [g]
+    float ay       = readRaw(0x3D) / 16384.0;      // Y軸加速度 [g]
+    float az       = readRaw(0x3F) / 16384.0;      // Z軸加速度 [g]
+    float altitude = bmp.readAltitude(1013.25);     // 絶対高度 [m]
+    float relAlt   = altitude - groundAltitude;     // 相対高度 [m]
 
+    // 状態更新
     updateState(ax, ay, az, altitude);
 
+    // シリアルモニタに出力
     Serial.printf("accel=%.2f  高度=%.1fm  state=%s\n",
         sqrt(ax*ax + ay*ay + az*az), relAlt, stateName(state));
-
-    File f = SD.open("/flight.csv", FILE_APPEND);
-    if (f) {
-        f.printf("%.3f,%.4f,%.4f,%.4f,%.2f,%s\n",
-            millis()/1000.0, ax, ay, az, relAlt, stateName(state));
-        f.close();
-    }
 
     delay(100);
 }
